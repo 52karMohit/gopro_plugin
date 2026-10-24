@@ -1,165 +1,110 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import 'gopro_constants.dart';
 import 'gopro_http_service.dart';
 
-/// Manages GoPro Live Preview streaming using RTMP protocol.
-/// Uses WebView with flv.js to play RTMP streams since Flutter's video_player
-/// doesn't natively support RTMP.
+enum GoProStreamState { idle, connecting, streaming, error }
+
 class GoProPreviewService extends ChangeNotifier {
   final GoProHttpService httpService;
 
-  WebViewController? _webViewController;
-  WebViewController? get webViewController => _webViewController;
+  Player? _player;
+  VideoController? _videoController;
+  VideoController? get videoController => _videoController;
 
-  bool _isStreaming = false;
-  bool get isStreaming => _isStreaming;
-
-  bool _isConnecting = false;
-  bool get isConnecting => _isConnecting;
+  GoProStreamState _state = GoProStreamState.idle;
+  GoProStreamState get state => _state;
+  bool get isStreaming => _state == GoProStreamState.streaming;
+  bool get isConnecting => _state == GoProStreamState.connecting;
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
-  String? _rtmpUrl;
-  String? get rtmpUrl => _rtmpUrl;
+  String? _streamUrl;
+  String? get streamUrl => _streamUrl;
+
+  bool _isDisposed = false;
 
   GoProPreviewService({required this.httpService});
 
-  /// Start the live camera preview using RTMP
   Future<bool> startPreview({bool isDemo = false}) async {
-    if (_isStreaming || _isConnecting) return true;
+    if (isStreaming || isConnecting) return true;
 
-    _isConnecting = true;
     _errorMessage = null;
-    notifyListeners();
+    _updateState(GoProStreamState.connecting);
 
     try {
-      if (isDemo) {
-        // In Demo Mode, use a sample RTMP stream
-        _rtmpUrl = 'rtmp://live.twitch.tv/app/live_549077846_xxxxxxxxxxxxx';
-        debugPrint('[GoPro Preview] Demo mode - using sample RTMP stream');
-      } else {
-        // Start the camera's RTMP stream via HTTP command
+      if (!isDemo) {
         final ok = await httpService.startPreviewStream(
           port: GoProConstants.defaultStreamPort,
         );
         if (!ok) {
           throw Exception('Camera rejected preview start request (Check Wi-Fi)');
         }
-
-        // RTMP URL format: rtmp://<camera_ip>:1935/live
-        _rtmpUrl = 'rtmp://${httpService.host}:1935/live';
-        debugPrint('[GoPro Preview] Connecting to RTMP stream: $_rtmpUrl');
       }
 
-      // Create WebView controller with flv.js for RTMP playback
-      _webViewController = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setBackgroundColor(const Color(0x00000000))
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onPageFinished: (String url) {
-              debugPrint('[GoPro Preview] WebView page loaded');
-              _isConnecting = false;
-              _isStreaming = true;
-              notifyListeners();
-            },
-            onWebResourceError: (WebResourceError error) {
-              debugPrint('[GoPro Preview] WebView error: ${error.description}');
-              _errorMessage = error.description;
-              _isConnecting = false;
-              _isStreaming = false;
-              notifyListeners();
-            },
-          ),
-        )
-        ..loadHtmlString(_getFlvJsHtml(_rtmpUrl!));
+      // The camera pushes UDP to the phone, so listen locally.
+      _streamUrl = 'udp://0.0.0.0:${GoProConstants.defaultStreamPort}';
 
-      _isStreaming = true;
-      _isConnecting = false;
-      notifyListeners();
+      final player = Player();
+      final native = player.platform as NativePlayer;
+      await native.setProperty('profile', 'low-latency');
+      await native.setProperty('cache', 'no');
+
+      _player = player;
+      _videoController = VideoController(player);
+
+      await player.open(Media(_streamUrl!), play: true);
+
+      _updateState(GoProStreamState.streaming);
       return true;
     } catch (e) {
       debugPrint('[GoPro Preview] Failed to start preview: $e');
-      _errorMessage = e.toString();
-      _isConnecting = false;
-      _isStreaming = false;
       await stopPreview();
-      notifyListeners();
+      _errorMessage = e.toString();
+      _updateState(GoProStreamState.error);
       return false;
     }
   }
 
-  /// Generate HTML with flv.js for RTMP playback
-  String _getFlvJsHtml(String rtmpUrl) {
-    return '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-    #videoElement { width: 100%; height: 100%; object-fit: cover; }
-  </style>
-  <script src="https://cdn.bootcdn.net/ajax/libs/flv.js/1.6.2/flv.min.js"></script>
-</head>
-<body>
-  <video id="videoElement" muted autoplay playsinline></video>
-  <script>
-    if (flvjs.isSupported()) {
-      var videoElement = document.getElementById('videoElement');
-      var flvPlayer = flvjs.createPlayer({
-        type: 'flv',
-        url: '$rtmpUrl',
-        isLive: true,
-        hasAudio: false,
-        hasVideo: true,
-        cors: true
-      });
-      flvPlayer.attachMediaElement(videoElement);
-      flvPlayer.load();
-      flvPlayer.play().catch(function(error) {
-        console.error('Playback error:', error);
-      });
-    } else {
-      console.error('FLV is not supported');
-    }
-  </script>
-</body>
-</html>
-''';
-  }
-
-  bool _isDisposed = false;
-
-  /// Stop preview streaming and clean up
   Future<void> stopPreview() async {
-    _webViewController = null;
+    final player = _player;
+    _player = null;
+    _videoController = null;
+    _streamUrl = null;
+    _updateState(GoProStreamState.idle); // UI removes the Video widget first
 
-    // Send stop command to camera if not disposed
+    await Future.delayed(const Duration(milliseconds: 100));
+    try {
+      await player?.dispose();
+    } catch (e) {
+      debugPrint('[GoPro Preview] Player dispose error: $e');
+    }
+
     if (!_isDisposed) {
       try {
         await httpService.stopPreviewStream();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[GoPro Preview] Error stopping stream command: $e');
+      }
     }
+  }
 
-    _isStreaming = false;
-    _isConnecting = false;
-    _rtmpUrl = null;
-    if (!_isDisposed) {
-      notifyListeners();
-    }
+  void _updateState(GoProStreamState newState) {
+    if (_isDisposed) return;
+    _state = newState;
+    notifyListeners();
   }
 
   @override
   void dispose() {
     _isDisposed = true;
-    _webViewController = null;
+    _player?.dispose();
+    _player = null;
+    _videoController = null;
     super.dispose();
   }
 }

@@ -4,7 +4,9 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_blue_plus_winrt
+  media_kit_video
   permission_handler_windows
+  volume_controller
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

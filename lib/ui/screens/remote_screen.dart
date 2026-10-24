@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../services/gopro_constants.dart';
 import '../../services/gopro_controller.dart';
@@ -9,6 +8,7 @@ import '../widgets/status_badge.dart';
 class RemoteScreen extends StatefulWidget {
   final GoProController controller;
   final VoidCallback onNavigateToMedia;
+
 
   const RemoteScreen({
     super.key,
@@ -25,6 +25,7 @@ class _RemoteScreenState extends State<RemoteScreen>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
   bool _showGrid = false;
+  // final videoController = previewServiceService.previewServicevideoController;
 
   @override
   void initState() {
@@ -50,6 +51,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     final controller = widget.controller;
     final isRecording = controller.status.isRecording;
     final mode = controller.currentMode;
+
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D0F12),
@@ -117,7 +119,8 @@ class _RemoteScreenState extends State<RemoteScreen>
     final previewService = controller.previewService;
     final isStreaming = previewService.isStreaming;
     final isConnecting = previewService.isConnecting;
-    final webViewController = previewService.webViewController;
+    final videoController = previewService.videoController;
+
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -145,10 +148,14 @@ class _RemoteScreenState extends State<RemoteScreen>
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // RTMP Stream Display via WebView
-            if (isStreaming && webViewController != null)
+            // WebView placeholder showing stream status
+            if (isStreaming && videoController != null)
               SizedBox.expand(
-                child: WebViewWidget(controller: webViewController),
+                child: Video(
+                  controller: videoController,
+                  controls: NoVideoControls,
+                  fit: BoxFit.cover,
+                ),
               )
             else if (isConnecting)
               Column(
@@ -173,7 +180,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Connecting to RTMP stream: ${previewService.rtmpUrl ?? "Unknown"}',
+                    'Connecting to stream: ${previewService.streamUrl ?? "Unknown"}',
                     style: TextStyle(color: Colors.grey[400], fontSize: 11),
                   ),
                 ],
@@ -207,7 +214,7 @@ class _RemoteScreenState extends State<RemoteScreen>
                   const SizedBox(height: 4),
                   Text(
                     controller.isWifiConnected || controller.isDemoMode
-                        ? 'Tap below to stream live view from GoPro'
+                        ? 'Tap below to attempt preview stream'
                         : 'Requires phone connected to camera Wi-Fi',
                     style: TextStyle(color: Colors.grey[400], fontSize: 11),
                   ),
