@@ -246,35 +246,36 @@ class GoProController extends ChangeNotifier {
   /// Automatically connects mobile Wi-Fi programmatically -> Verifies HTTP session & starts keep-alive!
   ///
   /// [manualPassword]: optional override password if BLE credential read fails.
-  Future<bool> oneClickAutoConnect(GoProDevice device, {String? manualPassword}) async {
+  Future<bool> oneClickAutoConnect(
+    GoProDevice device, {
+    String? manualPassword,
+  }) async {
     _isAutoConnecting = true;
     _autoConnectStep = 'Connecting to ${device.name} over BLE...';
     _addLog('🚀 1-Click Auto-Connect started for ${device.name}');
     notifyListeners();
 
     try {
-      // ── Step 1: BLE connect ──────────────────────────────────────────────────
+      // ── Step 1: BLE connect ──────────────────────────────────────────────
       final bleOk = await connectDevice(device);
       if (!bleOk) {
         throw Exception('Could not connect to camera via BLE');
       }
 
-      // ── Step 2: Power on Camera Wi-Fi AP ────────────────────────────────────
+      // ── Step 2: Power on Camera Wi-Fi AP ─────────────────────────────────
       _autoConnectStep = 'Powering on Camera Wi-Fi Hotspot...';
       notifyListeners();
       await enableWifiAp();
 
-      // Allow extra time for the camera hotspot to fully start broadcasting.
       // GoPro typically needs 2–4 s after the AP command before credentials are valid.
       _autoConnectStep = 'Waiting for hotspot to start...';
       notifyListeners();
       await Future.delayed(const Duration(seconds: 3));
 
-      // ── Step 3: Read SSID / Password from BLE characteristics ───────────────
+      // ── Step 3: Read SSID / Password from BLE characteristics ────────────
       _autoConnectStep = 'Reading Wi-Fi credentials from camera...';
       notifyListeners();
 
-      // readWifiCredentials() has built-in retry logic (up to 3 attempts)
       final creds = await bleService.readWifiCredentials(retries: 3);
       final rawSsid = creds['ssid'] ?? '';
       final rawPassword = creds['password'] ?? '';
@@ -283,27 +284,29 @@ class GoProController extends ChangeNotifier {
       final ssid = rawSsid.isNotEmpty
           ? rawSsid
           : (_currentDevice?.wifiSsid?.isNotEmpty == true
-              ? _currentDevice!.wifiSsid!
-              : (device.wifiSsid?.isNotEmpty == true ? device.wifiSsid! : ''));
+                ? _currentDevice!.wifiSsid!
+                : (device.wifiSsid?.isNotEmpty == true
+                      ? device.wifiSsid!
+                      : ''));
 
       final password = rawPassword.isNotEmpty
           ? rawPassword
           : (manualPassword?.isNotEmpty == true
-              ? manualPassword!
-              : (_currentDevice?.wifiPassword ?? device.wifiPassword ?? ''));
+                ? manualPassword!
+                : (_currentDevice?.wifiPassword ?? device.wifiPassword ?? ''));
 
       if (ssid.isEmpty) {
-        // Surface a clear actionable error so UI can show password prompt
-        _addLog('⚠️ SSID could not be read from camera BLE. '
-            'Ensure camera has paired and Wi-Fi AP is active. '
-            'You can enter the SSID/password manually below.');
+        _addLog(
+          '⚠️ SSID could not be read from camera BLE. '
+          'Ensure camera has paired and Wi-Fi AP is active. '
+          'You can enter the SSID/password manually below.',
+        );
         _autoConnectStep = 'SSID unresolved — enter credentials manually';
         _isAutoConnecting = false;
         notifyListeners();
         return false;
       }
 
-      // Update device record with resolved creds
       _currentDevice = _currentDevice?.copyWith(
         wifiSsid: ssid,
         wifiPassword: password,
@@ -311,7 +314,7 @@ class GoProController extends ChangeNotifier {
 
       _addLog('✅ Wi-Fi credentials resolved — SSID: "$ssid"');
 
-      // ── Step 4: Programmatically join camera Wi-Fi network ──────────────────
+      // ── Step 4: Programmatically join camera Wi-Fi network ───────────────
       _autoConnectStep = 'Connecting phone to "$ssid"...';
       notifyListeners();
 
@@ -322,9 +325,11 @@ class GoProController extends ChangeNotifier {
         );
         _addLog('Wi-Fi association result: $wifiSuccess');
         if (!wifiSuccess) {
-          _addLog('⚠️ Programmatic Wi-Fi join failed. '
-              'On Android 10+, please connect manually to "$ssid" in Wi-Fi settings, '
-              'then tap "Ping & Connect" in Advanced Settings.');
+          _addLog(
+            '⚠️ Programmatic Wi-Fi join failed. '
+            'On Android 10+, please connect manually to "$ssid" in Wi-Fi settings, '
+            'then tap "Ping & Connect" in Advanced Settings.',
+          );
           _autoConnectStep = 'Wi-Fi connection failed';
           _isAutoConnecting = false;
           notifyListeners();
@@ -334,13 +339,10 @@ class GoProController extends ChangeNotifier {
         await Future.delayed(const Duration(milliseconds: 700));
       }
 
-      // ── Step 5: Verify HTTP session ─────────────────────────────────────────
+      // ── Step 5: Verify HTTP session ──────────────────────────────────────
       _autoConnectStep = 'Verifying camera HTTP connection...';
       notifyListeners();
 
-      // Allow more time for DHCP / routing to settle before first ping
-      // Some Android devices need 3-5 seconds after Wi-Fi association before
-      // the local gateway IP (10.5.5.9) becomes reachable
       _addLog('Waiting for network routing to settle...');
       await Future.delayed(const Duration(seconds: 4));
 
@@ -356,7 +358,6 @@ class GoProController extends ChangeNotifier {
         notifyListeners();
         return true;
       } else {
-        // One more retry after another brief delay
         _autoConnectStep = 'Retrying HTTP verification...';
         notifyListeners();
         await Future.delayed(const Duration(seconds: 3));
@@ -379,11 +380,14 @@ class GoProController extends ChangeNotifier {
       return false;
     }
   }
+
   Future<bool> enableWifiAp() async {
     _addLog('Enabling GoPro Wi-Fi Access Point...');
     if (_isDemoMode) {
       await Future.delayed(const Duration(milliseconds: 600));
-      _addLog('GoPro Wi-Fi Access Point is now ON (SSID: ${_currentDevice?.wifiSsid})');
+      _addLog(
+        'GoPro Wi-Fi Access Point is now ON (SSID: ${_currentDevice?.wifiSsid})',
+      );
       return true;
     }
     final success = await bleService.enableWifiAp();
@@ -394,10 +398,16 @@ class GoProController extends ChangeNotifier {
       if ((creds['ssid'] != null && creds['ssid']!.isNotEmpty) ||
           (creds['password'] != null && creds['password']!.isNotEmpty)) {
         _currentDevice = _currentDevice?.copyWith(
-          wifiSsid: creds['ssid']?.isNotEmpty == true ? creds['ssid'] : _currentDevice?.wifiSsid,
-          wifiPassword: creds['password']?.isNotEmpty == true ? creds['password'] : _currentDevice?.wifiPassword,
+          wifiSsid: creds['ssid']?.isNotEmpty == true
+              ? creds['ssid']
+              : _currentDevice?.wifiSsid,
+          wifiPassword: creds['password']?.isNotEmpty == true
+              ? creds['password']
+              : _currentDevice?.wifiPassword,
         );
-        _addLog('Camera AP Credentials ready: SSID=${_currentDevice?.wifiSsid}');
+        _addLog(
+          'Camera AP Credentials ready: SSID=${_currentDevice?.wifiSsid}',
+        );
         notifyListeners();
       }
     }
@@ -422,31 +432,52 @@ class GoProController extends ChangeNotifier {
       return true;
     }
 
-    // Verify phone is connected to GoPro Wi-Fi network before attempting HTTP ping
-    if (!Platform.isAndroid && !Platform.isIOS) {
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+
+    if (!isMobile) {
       _addLog('Skipping Wi-Fi connectivity check on non-mobile platform');
     } else {
       final currentSsid = await wifiService.getCurrentSsid();
       final expectedSsid = _currentDevice?.wifiSsid;
-      _addLog('SSID check - Current: "${currentSsid ?? "None"}", Expected: "${expectedSsid ?? "None"}"');
+      _addLog(
+        'SSID check - Current: "${currentSsid ?? "None"}", Expected: "${expectedSsid ?? "None"}"',
+      );
+
+      final normalizedCurrent = (currentSsid ?? '').replaceAll('"', '').trim();
+      // Android 10+ returns "<unknown ssid>" (or nothing) unless location
+      // permission AND location services are on. In that case we cannot tell,
+      // so let the HTTP ping decide instead of failing here.
+      final ssidUnreadable =
+          normalizedCurrent.isEmpty ||
+          normalizedCurrent.toLowerCase() == '<unknown ssid>';
 
       if (expectedSsid != null && expectedSsid.isNotEmpty) {
-        // Normalize SSIDs for comparison (remove quotes, trim whitespace)
-        final normalizedCurrent = currentSsid?.replaceAll('"', '').trim();
         final normalizedExpected = expectedSsid.replaceAll('"', '').trim();
-        final isConnected = normalizedCurrent != null &&
-            normalizedCurrent.toLowerCase() == normalizedExpected.toLowerCase();
-
-        if (!isConnected) {
-          _addLog('⚠️ Phone is not connected to GoPro Wi-Fi network "$expectedSsid". '
-              'Current SSID: ${currentSsid ?? "None"}. Please connect manually in Wi-Fi settings.');
+        if (ssidUnreadable) {
+          _addLog(
+            '⚠️ Current SSID is unreadable (grant location permission and '
+            'turn on location services). Skipping SSID check; trying HTTP ping.',
+          );
+        } else if (normalizedCurrent.toLowerCase() !=
+            normalizedExpected.toLowerCase()) {
+          _addLog(
+            '⚠️ Phone is not connected to GoPro Wi-Fi network "$expectedSsid". '
+            'Current SSID: $normalizedCurrent. Please connect manually in Wi-Fi settings.',
+          );
           notifyListeners();
           return false;
+        } else {
+          _addLog(
+            '✅ SSID verification passed: connected to $normalizedCurrent',
+          );
         }
-        _addLog('✅ SSID verification passed: connected to $normalizedCurrent');
       } else {
         _addLog('⚠️ Expected SSID is empty, skipping SSID verification');
       }
+
+      // Pin ALL app traffic (HTTP + native UDP video) to the Wi-Fi network so
+      // Android doesn't route it over mobile data (the camera has no internet).
+      await wifiService.bindProcessToWifi();
     }
 
     // Retry HTTP ping with exponential backoff for network routing to settle
@@ -455,7 +486,9 @@ class GoProController extends ChangeNotifier {
     bool ok = false;
 
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      _addLog('HTTP ping attempt $attempt/$maxRetries to $targetHost:$targetPort...');
+      _addLog(
+        'HTTP ping attempt $attempt/$maxRetries to $targetHost:$targetPort...',
+      );
       ok = await httpService.pingCamera();
       if (ok) {
         break;
@@ -463,7 +496,7 @@ class GoProController extends ChangeNotifier {
       if (attempt < maxRetries) {
         _addLog('Ping failed, retrying in ${retryDelayMs}ms...');
         await Future.delayed(Duration(milliseconds: retryDelayMs));
-        retryDelayMs *= 2; // Exponential backoff: 1s, 2s, 4s, 8s
+        retryDelayMs *= 2;
       }
     }
 
@@ -473,11 +506,13 @@ class GoProController extends ChangeNotifier {
       _startHeartbeat();
       _pollCameraStatus();
       _addLog('Connected to GoPro Wi-Fi HTTP API at $targetHost:$targetPort!');
-      // Load media list upon connecting to Wi-Fi
       fetchMediaList();
     } else {
-      _addLog('Could not reach GoPro at $targetHost:$targetPort after $maxRetries attempts. '
-          'Make sure your phone is connected to the camera\'s Wi-Fi network and the camera is powered on.');
+      _addLog(
+        'Could not reach GoPro at $targetHost:$targetPort after $maxRetries attempts. '
+        'Make sure your phone is connected to the camera\'s Wi-Fi network and the camera is powered on.',
+      );
+      if (isMobile) await wifiService.releaseWifiBinding();
     }
     notifyListeners();
     return ok;
@@ -536,8 +571,8 @@ class GoProController extends ChangeNotifier {
         final presetId = mode == 'Photo'
             ? 65536
             : mode == 'Timelapse'
-                ? 131072
-                : 0;
+            ? 131072
+            : 0;
         httpService.loadPreset(presetId);
       }
     }
@@ -567,8 +602,8 @@ class GoProController extends ChangeNotifier {
 
     if (success) {
       if (_currentMode == 'Photo') {
-        _addLog('Photo captured! Creating photo file...');
-        _handleCreatedFile(isVideo: false);
+        _addLog('Photo captured!');
+        unawaited(_syncCreatedFileFromCamera(isVideo: false));
       } else {
         _status = _status.copyWith(isRecording: true);
         _recordingSeconds = 0;
@@ -579,10 +614,12 @@ class GoProController extends ChangeNotifier {
         });
         _addLog('Video recording started!');
 
-        // Automatically start camera preview for video recording
-        if (!previewService.isStreaming && (_isWifiConnected || _isDemoMode)) {
+        // Auto-start the preview, but don't block the shutter UI on it.
+        if (!previewService.isStreaming &&
+            !previewService.isConnecting &&
+            (_isWifiConnected || _isDemoMode)) {
           _addLog('Auto-starting camera preview during recording...');
-          await startCameraPreview();
+          unawaited(startCameraPreview());
         }
       }
       notifyListeners();
@@ -615,18 +652,13 @@ class GoProController extends ChangeNotifier {
       _status = _status.copyWith(isRecording: false);
       _addLog('Recording stopped. Total duration: $formattedRecordingTime');
 
-      // File creation hook: A new MP4 file is produced upon stopping recording!
-      _handleCreatedFile(isVideo: true);
+      // Look up the real file the camera just finalized (demo: simulated).
+      unawaited(_syncCreatedFileFromCamera(isVideo: true));
 
       // Automatically stop camera preview when recording ends
-      if (previewService.isStreaming) {
+      if (previewService.isStreaming || previewService.isConnecting) {
         _addLog('Auto-stopping camera preview after recording...');
         await stopCameraPreview();
-      }
-
-      // Refresh camera SD card media list
-      if (_isWifiConnected && !_isDemoMode) {
-        Future.delayed(const Duration(seconds: 2), fetchMediaList);
       }
       notifyListeners();
     }
@@ -652,6 +684,28 @@ class GoProController extends ChangeNotifier {
   // ---------------------------------------------------------------------------
   // File Creation & Tracking
   // ---------------------------------------------------------------------------
+
+  /// After a capture, ask the camera for its real media list and use the newest
+  /// entry as [lastCreatedFile]. In demo mode a fake file is created instead.
+  Future<void> _syncCreatedFileFromCamera({required bool isVideo}) async {
+    if (_isDemoMode) {
+      _handleCreatedFile(isVideo: isVideo);
+      return;
+    }
+    if (!_isWifiConnected) {
+      _addLog('Wi-Fi not connected; cannot look up the new file on the camera');
+      return;
+    }
+    await Future.delayed(const Duration(seconds: 2)); // let camera finalize
+    final files = await httpService.fetchMediaList();
+    if (files.isEmpty) return;
+    _mediaFiles = files;
+    _lastCreatedFile = files.first; // list is sorted newest first
+    _addLog('New file on SD card: ${_lastCreatedFile!.filename}');
+    notifyListeners();
+  }
+
+  /// Demo mode only: fabricates a file entry.
   void _handleCreatedFile({required bool isVideo}) {
     _simulatedFileCounter++;
     final pad = _simulatedFileCounter.toString().padLeft(4, '0');
@@ -670,7 +724,9 @@ class GoProController extends ChangeNotifier {
 
     _lastCreatedFile = newFile;
     _mediaFiles.insert(0, newFile);
-    _addLog('New file created on SD card: ${newFile.filename} (${newFile.formattedSize})');
+    _addLog(
+      'New file created on SD card: ${newFile.filename} (${newFile.formattedSize})',
+    );
     notifyListeners();
   }
 
@@ -714,10 +770,11 @@ class GoProController extends ChangeNotifier {
     );
     notifyListeners();
 
-    _addLog('Starting retrieval of ${file.filename} (${file.formattedSize})...');
+    _addLog(
+      'Starting retrieval of ${file.filename} (${file.formattedSize})...',
+    );
 
     if (_isDemoMode) {
-      // Simulate real-time chunked download with progress
       final appDir = await getApplicationDocumentsDirectory();
       final localMediaDir = Directory('${appDir.path}/GoProMedia');
       if (!await localMediaDir.exists()) {
@@ -739,8 +796,9 @@ class GoProController extends ChangeNotifier {
         notifyListeners();
       }
 
-      // Write mock sample bytes to local storage
-      await localFile.writeAsString('GoPro Open API Sample file data for ${file.filename}');
+      await localFile.writeAsString(
+        'GoPro Open API Sample file data for ${file.filename}',
+      );
       await loadLocalSavedFiles();
 
       _activeDownloads[key] = FileDownloadTask(
@@ -836,8 +894,9 @@ class GoProController extends ChangeNotifier {
       if (await localMediaDir.exists()) {
         final entities = await localMediaDir.list().toList();
         _localSavedFiles = entities.whereType<File>().toList();
-        _localSavedFiles.sort((a, b) =>
-            b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+        _localSavedFiles.sort(
+          (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
+        );
         notifyListeners();
       }
     } catch (e) {
@@ -845,7 +904,9 @@ class GoProController extends ChangeNotifier {
     }
   }
 
-  /// Camera Live Preview Controls
+  // ---------------------------------------------------------------------------
+  // Camera Live Preview Controls
+  // ---------------------------------------------------------------------------
   bool get isPreviewActive => previewService.isStreaming;
 
   Future<bool> startCameraPreview() async {
@@ -868,6 +929,7 @@ class GoProController extends ChangeNotifier {
 
     if (!_isDemoMode) {
       await bleService.disconnect();
+      await wifiService.releaseWifiBinding();
     }
     _isBleConnected = false;
     _isWifiConnected = false;

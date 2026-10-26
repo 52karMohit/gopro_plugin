@@ -3,20 +3,51 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:wifi_iot/wifi_iot.dart';
 
-/// Service responsible for automatically connecting the mobile device to the
-/// GoPro camera's Wi-Fi Access Point programmatically without manual user intervention.
+/// Service responsible for connecting the phone to the GoPro's Wi-Fi Access
+/// Point and making sure ALL app traffic (HTTP and the native UDP video
+/// stream) uses that network.
 class GoProWifiService {
   final _logController = StreamController<String>.broadcast();
   Stream<String> get logStream => _logController.stream;
 
+  bool _isBound = false;
+
   void _log(String message) {
-    debugPrint('[GoPro WiFi Auto-Connect] $message');
+    debugPrint('[GoPro WiFi] $message');
     _logController.add(message);
   }
 
-  /// Automatically connects the phone to the GoPro's Wi-Fi network programmatically.
-  /// Uses Android 10+ WifiNetworkSpecifier (withInternet: false) so Android doesn't
-  /// drop the connection due to lack of public internet.
+  /// Binds the whole process to the Wi-Fi network (Android).
+  ///
+  /// The GoPro AP has no internet, so Android may route sockets over mobile
+  /// data. Dart HTTP can still work while native sockets (mpv's UDP receiver)
+  /// leave through the wrong interface. Binding the process fixes both.
+  /// Requires CHANGE_NETWORK_STATE in AndroidManifest.xml.
+  Future<void> bindProcessToWifi() async {
+    if (!Platform.isAndroid || _isBound) return;
+    try {
+      await WiFiForIoTPlugin.forceWifiUsage(true);
+      _isBound = true;
+      _log('Process bound to Wi-Fi network');
+    } catch (e) {
+      _log('Could not bind process to Wi-Fi: $e');
+    }
+  }
+
+  /// Releases the binding so the rest of the app can use mobile data again.
+  Future<void> releaseWifiBinding() async {
+    if (!Platform.isAndroid || !_isBound) return;
+    try {
+      await WiFiForIoTPlugin.forceWifiUsage(false);
+      _log('Wi-Fi binding released');
+    } catch (e) {
+      _log('Could not release Wi-Fi binding: $e');
+    } finally {
+      _isBound = false;
+    }
+  }
+
+  /// Connects the phone to the GoPro's Wi-Fi network programmatically.
   Future<bool> connectToCameraWifi({
     required String ssid,
     required String password,
@@ -30,7 +61,6 @@ class GoProWifiService {
     try {
       _log('Initiating programmatic connection to Wi-Fi SSID: "$ssid"...');
 
-      // Check if Wi-Fi hardware is enabled on phone
       final isEnabled = await WiFiForIoTPlugin.isEnabled();
       if (!isEnabled) {
         _log('Turning on phone Wi-Fi...');
@@ -38,39 +68,41 @@ class GoProWifiService {
         await Future.delayed(const Duration(milliseconds: 800));
       }
 
-      // Check if already connected to this SSID
       final currentSsid = await WiFiForIoTPlugin.getSSID();
       if (currentSsid != null &&
           (currentSsid == ssid || currentSsid == '"$ssid"')) {
         _log('Phone is already connected to $ssid!');
+        await bindProcessToWifi();
         return true;
       }
 
       _log('Connecting to "$ssid" (WPA/WPA2)...');
 
-      // Connect programmatically
-      // Note: withInternet: true is used to ensure Android properly routes traffic
-      // through the Wi-Fi network. Even though the camera has no public internet,
-      // this setting prevents the "Network is unreachable" error by ensuring
-      // the HTTP client uses the correct network interface.
-      final success = await WiFiForIoTPlugin.connect(
-        ssid,
-        password: password.isNotEmpty ? password : null,
-        security: password.isNotEmpty ? NetworkSecurity.WPA : NetworkSecurity.NONE,
-        joinOnce: false,
-        withInternet: true,
-      ).timeout(timeout, onTimeout: () {
-        _log('Wi-Fi connection timed out after ${timeout.inSeconds}s');
-        return false;
-      });
+      final success =
+          await WiFiForIoTPlugin.connect(
+            ssid,
+            password: password.isNotEmpty ? password : null,
+            security: password.isNotEmpty
+                ? NetworkSecurity.WPA
+                : NetworkSecurity.NONE,
+            joinOnce: false,
+            withInternet: true,
+          ).timeout(
+            timeout,
+            onTimeout: () {
+              _log('Wi-Fi connection timed out after ${timeout.inSeconds}s');
+              return false;
+            },
+          );
 
       _log('Wi-Fi connection result: $success');
 
-      // Wait a moment for DHCP / local gateway IP (10.5.5.9) routing to settle
       if (success) {
+        // Let DHCP / the local gateway (10.5.5.9) settle, then pin traffic
+        // to this network.
         await Future.delayed(const Duration(seconds: 2));
+        await bindProcessToWifi();
       }
-
       return success;
     } catch (e) {
       _log('Error connecting to camera Wi-Fi: $e');
@@ -78,7 +110,8 @@ class GoProWifiService {
     }
   }
 
-  /// Check current connected Wi-Fi SSID
+  /// Current connected Wi-Fi SSID. On Android 10+ this can be null, empty or
+  /// "<unknown ssid>" unless location permission AND location services are on.
   Future<String?> getCurrentSsid() async {
     try {
       return await WiFiForIoTPlugin.getSSID();
@@ -87,14 +120,15 @@ class GoProWifiService {
     }
   }
 
-  /// Disconnect from current Wi-Fi
   Future<void> disconnect() async {
+    await releaseWifiBinding();
     try {
       await WiFiForIoTPlugin.disconnect();
     } catch (_) {}
   }
 
   void dispose() {
+    releaseWifiBinding();
     _logController.close();
   }
 }
