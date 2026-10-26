@@ -27,6 +27,12 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connects to your GoPro camera over its Wi-Fi network to control it and show the live preview.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Connects to your GoPro camera over Bluetooth.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Connects to your GoPro camera over Bluetooth.</string>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>

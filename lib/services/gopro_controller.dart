@@ -318,7 +318,24 @@ class GoProController extends ChangeNotifier {
       _autoConnectStep = 'Connecting phone to "$ssid"...';
       notifyListeners();
 
-      if (!_isDemoMode) {
+      final manualJoin =
+          Platform.isIOS && !GoProWifiService.iosProgrammaticJoin;
+
+      if (!_isDemoMode && manualJoin) {
+        // iOS without the Hotspot Configuration entitlement: the user joins
+        // the camera network in Settings; we poll until the camera answers.
+        final joined = await _waitForManualWifiJoin(
+          ssid,
+          password,
+          host: device.gatewayIp,
+          port: device.port,
+        );
+        if (!joined) {
+          _isAutoConnecting = false;
+          notifyListeners();
+          return false;
+        }
+      } else if (!_isDemoMode) {
         final wifiSuccess = await wifiService.connectToCameraWifi(
           ssid: ssid,
           password: password,
@@ -379,6 +396,43 @@ class GoProController extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// iOS: shows instructions via [autoConnectStep] and polls the camera's HTTP
+  /// API until it answers (i.e. the user joined the camera Wi-Fi), or times out.
+  /// Safe if the app is suspended while the user is in Settings: the deadline
+  /// is wall-clock based and polling resumes when the app returns.
+  Future<bool> _waitForManualWifiJoin(
+    String ssid,
+    String password, {
+    String? host,
+    int? port,
+    Duration timeout = const Duration(seconds: 120),
+  }) async {
+    httpService.updateEndpoint(host: host, port: port);
+    _autoConnectStep =
+        'Open Settings > Wi-Fi and join "$ssid"'
+        '${password.isNotEmpty ? ' (password: $password)' : ''}, '
+        'then come back to this app.';
+    _addLog('iOS: waiting for you to join Wi-Fi "$ssid" in Settings...');
+    notifyListeners();
+
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (await httpService.pingCamera(timeout: const Duration(seconds: 2))) {
+        _addLog('Camera reachable over Wi-Fi');
+        return true;
+      }
+      await Future.delayed(const Duration(seconds: 2));
+    }
+
+    _autoConnectStep = 'Timed out waiting for Wi-Fi "$ssid"';
+    _addLog(
+      '⚠️ Timed out waiting for the phone to join "$ssid". '
+      'Also check that Local Network access is allowed for this app '
+      '(Settings > Privacy & Security > Local Network).',
+    );
+    return false;
   }
 
   Future<bool> enableWifiAp() async {

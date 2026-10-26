@@ -10,6 +10,12 @@ class GoProWifiService {
   final _logController = StreamController<String>.broadcast();
   Stream<String> get logStream => _logController.stream;
 
+  /// iOS can only join a Wi-Fi network programmatically via NEHotspotConfiguration,
+  /// which needs the "Hotspot Configuration" entitlement (normally a paid Apple
+  /// Developer account). Leave false for free / sideloaded signing: the user
+  /// joins the GoPro network in Settings -> Wi-Fi and the controller waits.
+  static const bool iosProgrammaticJoin = false;
+
   bool _isBound = false;
 
   void _log(String message) {
@@ -17,12 +23,7 @@ class GoProWifiService {
     _logController.add(message);
   }
 
-  /// Binds the whole process to the Wi-Fi network (Android).
-  ///
-  /// The GoPro AP has no internet, so Android may route sockets over mobile
-  /// data. Dart HTTP can still work while native sockets (mpv's UDP receiver)
-  /// leave through the wrong interface. Binding the process fixes both.
-  /// Requires CHANGE_NETWORK_STATE in AndroidManifest.xml.
+
   Future<void> bindProcessToWifi() async {
     if (!Platform.isAndroid || _isBound) return;
     try {
@@ -55,6 +56,12 @@ class GoProWifiService {
   }) async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       _log('Platform not supported for programmatic Wi-Fi connection');
+      return false;
+    }
+    if (Platform.isIOS && !iosProgrammaticJoin) {
+      _log(
+        'Programmatic Wi-Fi join is disabled on iOS; join "$ssid" manually in Settings.',
+      );
       return false;
     }
 
