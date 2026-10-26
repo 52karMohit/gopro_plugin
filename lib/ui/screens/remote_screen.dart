@@ -1,9 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
-import '../../services/gopro_constants.dart';
 import '../../services/gopro_controller.dart';
+import '../../services/gopro_preview_service.dart';
 import '../widgets/status_badge.dart';
 
 class RemoteScreen extends StatefulWidget {
@@ -56,18 +56,11 @@ class _RemoteScreenState extends State<RemoteScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // Top Telemetry HUD
             _buildTelemetryHud(controller),
-
-            // Camera Live Viewfinder Preview
             _buildLiveViewfinder(controller),
-
-            // Mode Selector Bar (Video / Photo / Timelapse)
             const SizedBox(height: 12),
             _buildModeSelector(controller),
             const SizedBox(height: 12),
-
-            // Live Recording Timer Display
             if (isRecording) ...[
               _buildRecordingTimer(controller),
               const SizedBox(height: 10),
@@ -94,17 +87,10 @@ class _RemoteScreenState extends State<RemoteScreen>
               ),
               const SizedBox(height: 10),
             ],
-
-            // Shutter Button
             _buildShutterButton(controller),
             const SizedBox(height: 14),
-
-            // Action Buttons (Tag Highlight, etc.)
             _buildSecondaryActions(controller),
-
             const Spacer(),
-
-            // Last Created File Banner (if any)
             if (controller.lastCreatedFile != null)
               _buildLastCreatedFileBanner(controller),
           ],
@@ -113,11 +99,34 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Live viewfinder
+  // ---------------------------------------------------------------------------
   Widget _buildLiveViewfinder(GoProController controller) {
-    final previewService = controller.previewService;
-    final isStreaming = previewService.isStreaming;
-    final isConnecting = previewService.isConnecting;
-    final webViewController = previewService.webViewController;
+    // Rebuilds independently whenever previewService calls notifyListeners().
+    return ListenableBuilder(
+      listenable: controller.previewService,
+      builder: (context, _) {
+        final previewService = controller.previewService;
+        return _buildViewfinderContent(
+          controller: controller,
+          previewService: previewService,
+          isStreaming: previewService.isStreaming,
+          isConnecting: previewService.isConnecting,
+          videoController: previewService.videoController,
+        );
+      },
+    );
+  }
+
+  Widget _buildViewfinderContent({
+    required GoProController controller,
+    required GoProPreviewService previewService,
+    required bool isStreaming,
+    required bool isConnecting,
+    required VideoController? videoController,
+  }) {
+    final hasError = previewService.state == GoProStreamState.error;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -127,7 +136,9 @@ class _RemoteScreenState extends State<RemoteScreen>
         color: const Color(0xFF14171E),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isStreaming ? const Color(0xFF00A3E0) : const Color(0xFF222733),
+          color: isStreaming
+              ? const Color(0xFF00A3E0)
+              : const Color(0xFF222733),
           width: isStreaming ? 1.5 : 1.0,
         ),
         boxShadow: isStreaming
@@ -136,115 +147,46 @@ class _RemoteScreenState extends State<RemoteScreen>
                   color: const Color(0xFF00A3E0).withValues(alpha: 0.15),
                   blurRadius: 16,
                   spreadRadius: 2,
-                )
+                ),
               ]
             : null,
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(15),
         child: Stack(
-          alignment: Alignment.center,
+          fit: StackFit.expand,
           children: [
-            // RTMP Stream Display via WebView
-            if (isStreaming && webViewController != null)
-              SizedBox.expand(
-                child: WebViewWidget(controller: webViewController),
-              )
-            else if (isConnecting)
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation(Color(0xFF00A3E0)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Starting Live Camera Stream...',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Connecting to RTMP stream: ${previewService.rtmpUrl ?? "Unknown"}',
-                    style: TextStyle(color: Colors.grey[400], fontSize: 11),
-                  ),
-                ],
-              )
-            else
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1C202C),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFF2B3142)),
-                    ),
-                    child: const Icon(
-                      Icons.videocam_outlined,
-                      color: Color(0xFF00A3E0),
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Camera Live Preview',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    controller.isWifiConnected || controller.isDemoMode
-                        ? 'Tap below to stream live view from GoPro'
-                        : 'Requires phone connected to camera Wi-Fi',
-                    style: TextStyle(color: Colors.grey[400], fontSize: 11),
-                  ),
-                  const SizedBox(height: 10),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      if (!isStreaming) {
-                        controller.startCameraPreview();
-                      }
-                    },
-                    icon: const Icon(Icons.play_arrow, size: 18),
-                    label: const Text('Start Preview'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00A3E0),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                  ),
-                ],
+            // Video is mounted during connecting AND streaming so the texture
+            // is attached by the time the first frame is decoded.
+            if (isStreaming && previewService.isDemoStream)
+              _buildDemoPreview()
+            else if (videoController != null && (isStreaming || isConnecting))
+              Video(
+                key: ValueKey(videoController),
+                controller: videoController,
+                controls: NoVideoControls,
+                fit: BoxFit.cover,
+                fill: const Color(0xFF14171E),
               ),
 
-            // Top Stream HUD Overlays
+            // Opaque overlay hides the video until the first frame arrives.
+            if (isConnecting)
+              _buildConnectingOverlay(controller, previewService)
+            else if (!isStreaming)
+              _buildIdleOverlay(controller, previewService, hasError),
+
             if (isStreaming) ...[
               if (_showGrid) _buildGridOverlay(),
-
               Positioned(
                 top: 10,
                 left: 10,
                 child: Row(
                   children: [
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.7),
                         borderRadius: BorderRadius.circular(6),
@@ -274,14 +216,16 @@ class _RemoteScreenState extends State<RemoteScreen>
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.7),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: const Text(
-                        'RTMP Stream',
+                        'UDP / MPEG-TS',
                         style: TextStyle(
                           color: Color(0xFF00A3E0),
                           fontSize: 10,
@@ -292,7 +236,6 @@ class _RemoteScreenState extends State<RemoteScreen>
                   ],
                 ),
               ),
-
               Positioned(
                 top: 6,
                 right: 6,
@@ -308,8 +251,11 @@ class _RemoteScreenState extends State<RemoteScreen>
                       onPressed: () => setState(() => _showGrid = !_showGrid),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.stop_circle,
-                          color: Colors.redAccent, size: 22),
+                      icon: const Icon(
+                        Icons.stop_circle,
+                        color: Colors.redAccent,
+                        size: 22,
+                      ),
                       tooltip: 'Stop Preview',
                       onPressed: () => controller.stopCameraPreview(),
                     ),
@@ -323,43 +269,150 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
-  Widget _buildGridOverlay() {
-    return IgnorePointer(
+  Widget _buildConnectingOverlay(
+    GoProController controller,
+    GoProPreviewService previewService,
+  ) {
+    return Container(
+      color: const Color(0xFF14171E),
+      alignment: Alignment.center,
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(child: Container()),
-                const VerticalDivider(color: Colors.white24, width: 1),
-                Expanded(child: Container()),
-                const VerticalDivider(color: Colors.white24, width: 1),
-                Expanded(child: Container()),
-              ],
+          const SizedBox(
+            width: 36,
+            height: 36,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              valueColor: AlwaysStoppedAnimation(Color(0xFF00A3E0)),
             ),
           ),
-          const Divider(color: Colors.white24, height: 1),
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(child: Container()),
-                const VerticalDivider(color: Colors.white24, width: 1),
-                Expanded(child: Container()),
-                const VerticalDivider(color: Colors.white24, width: 1),
-                Expanded(child: Container()),
-              ],
+          const SizedBox(height: 12),
+          const Text(
+            'Starting Live Camera Stream...',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          const Divider(color: Colors.white24, height: 1),
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(child: Container()),
-                const VerticalDivider(color: Colors.white24, width: 1),
-                Expanded(child: Container()),
-                const VerticalDivider(color: Colors.white24, width: 1),
-                Expanded(child: Container()),
-              ],
+          const SizedBox(height: 4),
+          Text(
+            'Receiving video from camera...',
+            style: TextStyle(color: Colors.grey[400], fontSize: 11),
+          ),
+          TextButton(
+            onPressed: () => controller.stopCameraPreview(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIdleOverlay(
+    GoProController controller,
+    GoProPreviewService previewService,
+    bool hasError,
+  ) {
+    return Container(
+      color: const Color(0xFF14171E),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C202C),
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFF2B3142)),
+            ),
+            child: Icon(
+              hasError ? Icons.error_outline : Icons.videocam_outlined,
+              color: hasError ? Colors.redAccent : const Color(0xFF00A3E0),
+              size: 32,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            hasError ? 'Preview failed' : 'Camera Live Preview',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            hasError
+                ? (previewService.errorMessage ?? 'Unknown error')
+                : (controller.isWifiConnected || controller.isDemoMode
+                      ? 'Tap below to attempt preview stream'
+                      : 'Requires phone connected to camera Wi-Fi'),
+            textAlign: TextAlign.center,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Colors.grey[400], fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          ElevatedButton.icon(
+            onPressed: () => controller.startCameraPreview(),
+            icon: Icon(hasError ? Icons.refresh : Icons.play_arrow, size: 18),
+            label: Text(hasError ? 'Retry' : 'Start Preview'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00A3E0),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+          ),
+          // Debug-only diagnostic: counts raw UDP packets arriving from the camera.
+          if (kDebugMode && !controller.isDemoMode)
+            TextButton(
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                final result = await controller.previewService.debugProbeUdp();
+                messenger.showSnackBar(SnackBar(content: Text(result)));
+              },
+              child: const Text(
+                'Probe UDP (debug)',
+                style: TextStyle(fontSize: 11),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDemoPreview() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1B2A41), Color(0xFF0D1520)],
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.videocam,
+            color: Colors.white.withValues(alpha: 0.35),
+            size: 44,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'SIMULATED PREVIEW (Demo mode)',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.5),
+              fontSize: 11,
+              letterSpacing: 1.2,
             ),
           ),
         ],
@@ -367,10 +420,37 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
   }
 
+  Widget _buildGridOverlay() {
+    Widget row() => Expanded(
+      child: Row(
+        children: [
+          Expanded(child: Container()),
+          const VerticalDivider(color: Colors.white24, width: 1),
+          Expanded(child: Container()),
+          const VerticalDivider(color: Colors.white24, width: 1),
+          Expanded(child: Container()),
+        ],
+      ),
+    );
+    return IgnorePointer(
+      child: Column(
+        children: [
+          row(),
+          const Divider(color: Colors.white24, height: 1),
+          row(),
+          const Divider(color: Colors.white24, height: 1),
+          row(),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Unchanged widgets
+  // ---------------------------------------------------------------------------
   Widget _buildTelemetryHud(GoProController controller) {
     final status = controller.status;
-    final isConnected =
-        controller.isBleConnected || controller.isWifiConnected;
+    final isConnected = controller.isBleConnected || controller.isWifiConnected;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -527,8 +607,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         child: Center(
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 250),
-            width: isRecording ? 30 : (isPhoto ? 62 : 62),
-            height: isRecording ? 30 : (isPhoto ? 62 : 62),
+            width: isRecording ? 30 : 62,
+            height: isRecording ? 30 : 62,
             decoration: BoxDecoration(
               color: isPhoto ? Colors.white : const Color(0xFFFF3B30),
               borderRadius: BorderRadius.circular(isRecording ? 8 : 40),
@@ -542,10 +622,7 @@ class _RemoteScreenState extends State<RemoteScreen>
     );
 
     if (isRecording) {
-      return ScaleTransition(
-        scale: _pulseAnimation,
-        child: buttonCore,
-      );
+      return ScaleTransition(scale: _pulseAnimation, child: buttonCore);
     }
     return buttonCore;
   }
@@ -584,7 +661,8 @@ class _RemoteScreenState extends State<RemoteScreen>
         color: const Color(0xFF161B24),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-            color: const Color(0xFF00A3E0).withValues(alpha: 0.5)),
+          color: const Color(0xFF00A3E0).withValues(alpha: 0.5),
+        ),
       ),
       child: Row(
         children: [
