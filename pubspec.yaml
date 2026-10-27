@@ -1,7 +1,7 @@
 name: gopro_plugin
-description: "A new Flutter project."
+description: "Flutter plugin for GoPro camera control via BLE and Wi-Fi"
+version: 0.1.0
 publish_to: 'none'
-version: 0.1.0+1
 
 environment:
   sdk: ^3.11.5
@@ -25,4 +25,10 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
 flutter:
-  uses-material-design: true
+  plugin:
+    platforms:
+      android:
+        package: com.aiunika.gopro_plugin
+        pluginClass: GoProPlugin
+      ios:
+        pluginClass: GoProPlugin

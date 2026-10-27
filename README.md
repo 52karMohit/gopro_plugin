@@ -1,6 +1,6 @@
-# GoPro Open API Controller (Flutter)
+# gopro_plugin
 
-A complete mobile application and client SDK for connecting, controlling, and managing media with GoPro cameras (HERO9, HERO10, HERO11, HERO12, HERO13, and MAX) using official **Open GoPro BLE & HTTP specifications**.
+A Flutter plugin for connecting, controlling, and managing media with GoPro cameras (HERO9, HERO10, HERO11, HERO12, HERO13, and MAX) using the official **Open GoPro BLE & HTTP specifications**.
 
 ---
 
@@ -101,41 +101,122 @@ A complete mobile application and client SDK for connecting, controlling, and ma
 
 ---
 
+## 📦 Installation
+
+Add this to your package's `pubspec.yaml` file:
+
+```yaml
+dependencies:
+  gopro_plugin:
+    git:
+      url: https://github.com/52karMohit/gopro_plugin.git
+```
+
+Or install it from a local path:
+
+```yaml
+dependencies:
+  gopro_plugin:
+    path: ../gopro_plugin
+```
+
+Then run:
+
+```bash
+flutter pub get
+```
+
+## 🚀 Usage
+
+### Basic Setup
+
+```dart
+import 'package:gopro_plugin/gopro_plugin.dart';
+
+final controller = GoProController();
+```
+
+### Scan and Connect
+
+```dart
+// Start scanning for GoPro devices
+await controller.startScan()
+
+// Connect to a device
+await controller.oneClickAutoConnect(device)
+```
+
+### Control Recording
+
+```dart
+// Start recording
+await controller.startRecording()
+
+// Stop recording
+await controller.stopRecording()
+
+// Tag a highlight moment
+await controller.tagHighlight()
+```
+
+### Media Management
+
+```dart
+// Fetch media list from camera
+await controller.fetchMediaList()
+
+// Download a file
+await controller.retrieveFile(mediaFile);
+
+// Delete a file
+await controller.deleteFile(mediaFile);
+```
+
+### Demo Mode
+
+Test without a physical camera:
+
+```dart
+controller.toggleDemoMode(true);
+```
+
 ## 🛠️ Project Structure
 
 ```
 lib/
-├── main.dart                          # App initialization and theme setup
+├── gopro_plugin.dart                  # Main plugin export
 ├── models/
 │   └── gopro_models.dart              # GoProDevice, GoProStatus, GoProMediaFile, FileDownloadTask
-├── services/
-│   ├── gopro_constants.dart           # Open GoPro UUIDs, Byte arrays, and HTTP Endpoints
-│   ├── gopro_ble_service.dart         # BLE scanning, pairing, shutter, and Wi-Fi AP control
-│   ├── gopro_http_service.dart        # HTTP REST API client, chunked file downloading
-│   └── gopro_controller.dart         # High-level state orchestrator & Hardware Simulator
-└── ui/
-    ├── home_page.dart                 # Navigation scaffold & protocol logs bottom sheet
-    ├── widgets/
-    │   ├── status_badge.dart          # Battery, storage, and telemetry badges
-    │   └── terminal_log_sheet.dart    # Live Open GoPro BLE/HTTP packet logger
-    └── screens/
-        ├── connect_screen.dart        # Step-by-step BLE scanner, Wi-Fi AP & HTTP setup
-        ├── remote_screen.dart         # Telemetry HUD, recording stopwatch, shutter button
-        └── media_screen.dart          # SD card file gallery, chunked downloader, local storage
-```
+└── services/
+    ├── gopro_constants.dart           # Open GoPro UUIDs, Byte arrays, and HTTP Endpoints
+    ├── gopro_ble_service.dart         # BLE scanning, pairing, shutter, and Wi-Fi AP control
+    ├── gopro_http_service.dart        # HTTP REST API client, chunked file downloading
+    ├── gopro_wifi_service.dart        # Wi-Fi connection management
+    ├── gopro_preview_service.dart     # Camera preview streaming
+    └── gopro_controller.dart         # High-level state orchestrator & Hardware Simulator
 
----
+example/
+├── lib/
+│   ├── main.dart                      # Example app entry point
+│   └── ui/                           # Example UI implementation
+└── android/                          # Example Android app
+└── ios/                              # Example iOS app
+```
 
 ## 🧪 Testing
 
-Run the automated test suite:
+Run the example app to test the plugin:
 
 ```bash
-flutter test
+cd example
+flutter run
 ```
 
-Analyze code health:
+## 📝 Requirements
 
-```bash
-flutter analyze
-```
+- **Android**: minSdk 21, Bluetooth and Location permissions
+- **iOS**: iOS 12.0+, Bluetooth and Local Network permissions
+
+## 📄 License
+
+See the [LICENSE](LICENSE) file for details.
