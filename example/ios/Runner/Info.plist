@@ -53,5 +53,12 @@
 	<string>This app needs Bluetooth to connect to GoPro cameras</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>This app needs local network access to communicate with GoPro cameras</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+		<string>_gopro._tcp</string>
+	</array>
+	<key>NSNetworkExtensionUsageDescription</key>
+	<string>This app needs network extension access to connect to GoPro WiFi networks</string>
 </dict>
 </plist>

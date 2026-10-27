@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:wifi_iot/wifi_iot.dart';
 
 /// Service responsible for connecting the phone to the GoPro's Wi-Fi Access
@@ -10,11 +11,13 @@ class GoProWifiService {
   final _logController = StreamController<String>.broadcast();
   Stream<String> get logStream => _logController.stream;
 
+  static const MethodChannel _channel = MethodChannel('gopro_plugin/wifi');
+
   /// iOS can only join a Wi-Fi network programmatically via NEHotspotConfiguration,
   /// which needs the "Hotspot Configuration" entitlement (normally a paid Apple
   /// Developer account). Leave false for free / sideloaded signing: the user
   /// joins the GoPro network in Settings -> Wi-Fi and the controller waits.
-  static const bool iosProgrammaticJoin = false;
+  static const bool iosProgrammaticJoin = true;
 
   bool _isBound = false;
 
@@ -68,6 +71,24 @@ class GoProWifiService {
     try {
       _log('Initiating programmatic connection to Wi-Fi SSID: "$ssid"...');
 
+      if (Platform.isIOS) {
+        // Use native iOS method via MethodChannel
+        _log('Using native iOS NEHotspotConfiguration...');
+        final success = await _channel.invokeMethod<bool>('connectToWifi', {
+          'ssid': ssid,
+          'password': password,
+        }).timeout(
+          timeout,
+          onTimeout: () {
+            _log('Wi-Fi connection timed out after ${timeout.inSeconds}s');
+            return false;
+          },
+        );
+        _log('iOS Wi-Fi connection result: $success');
+        return success ?? false;
+      }
+
+      // Android path
       final isEnabled = await WiFiForIoTPlugin.isEnabled();
       if (!isEnabled) {
         _log('Turning on phone Wi-Fi...');
@@ -121,6 +142,11 @@ class GoProWifiService {
   /// "<unknown ssid>" unless location permission AND location services are on.
   Future<String?> getCurrentSsid() async {
     try {
+      if (Platform.isIOS) {
+        // Use native iOS method via MethodChannel
+        final ssid = await _channel.invokeMethod<String>('getCurrentSSID');
+        return ssid;
+      }
       return await WiFiForIoTPlugin.getSSID();
     } catch (_) {
       return null;
@@ -130,7 +156,14 @@ class GoProWifiService {
   Future<void> disconnect() async {
     await releaseWifiBinding();
     try {
-      await WiFiForIoTPlugin.disconnect();
+      if (Platform.isIOS) {
+        final ssid = await getCurrentSsid();
+        if (ssid != null) {
+          await _channel.invokeMethod('disconnectFromWifi', {'ssid': ssid});
+        }
+      } else {
+        await WiFiForIoTPlugin.disconnect();
+      }
     } catch (_) {}
   }
 

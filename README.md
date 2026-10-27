@@ -217,6 +217,28 @@ flutter run
 - **Android**: minSdk 21, Bluetooth and Location permissions
 - **iOS**: iOS 12.0+, Bluetooth and Local Network permissions
 
+### iOS Setup Requirements
+
+For iOS devices, additional setup is required for programmatic WiFi connection:
+
+1. **Add Entitlements**: The plugin uses `NEHotspotConfiguration` for WiFi connection. You need to add the Hotspot Configuration entitlement:
+   - Add `ios/GoProPlugin.entitlements` to your project (included in the plugin)
+   - Enable "Hotspot Configuration" capability in Xcode (requires Apple Developer account)
+   - For development/sideloaded builds, users must manually join the GoPro WiFi network in Settings
+
+2. **Info.plist Permissions**: The following permissions are required (already included in example):
+   - `NSBluetoothAlwaysUsageDescription`: Bluetooth access
+   - `NSBluetoothPeripheralUsageDescription`: Bluetooth peripheral access
+   - `NSLocalNetworkUsageDescription`: Local network access
+   - `NSBonjourServices`: Bonjour services for network discovery
+   - `NSNetworkExtensionUsageDescription`: Network extension access
+
+3. **Framework Dependencies**: The plugin automatically includes:
+   - `NetworkExtension`: For WiFi configuration
+   - `SystemConfiguration`: For network status
+
+**Note**: Without the Hotspot Configuration entitlement (paid Apple Developer account), iOS users must manually join the GoPro WiFi network in Settings before the app can communicate with the camera.
+
 ## 📄 License
 
 See the [LICENSE](LICENSE) file for details.
